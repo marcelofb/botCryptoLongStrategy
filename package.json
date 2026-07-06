@@ -1,0 +1,28 @@
+{
+  "name": "crypto-alert-bot-bull",
+  "version": "1.0.0",
+  "description": "Bot de alertas por Telegram para estrategia de long 5x en BTCUSD_PERP (coin-margined)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [
+    "crypto",
+    "telegram",
+    "bot",
+    "alerts",
+    "long",
+    "btc"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.20.2"
+  },
+  "dependencies": {
+    "axios": "^1.13.6",
+    "dotenv": "^17.3.1",
+    "node-cron": "^4.2.1",
+    "node-telegram-bot-api": "^0.67.0",
+    "technicalindicators": "^3.1.0"
+  }
+}
