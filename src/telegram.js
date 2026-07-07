@@ -6,7 +6,11 @@ let bot = null;
 let chatIds = [];
 
 function formatSymbol(symbol) {
-  return `\`${String(symbol).replace(/`/g, '')}\``;
+  return String(symbol).replace(/([_*\[\]()`])/g, '\\$1');
+}
+
+function getMessageFooter() {
+  return `\n\n— *Crypto Bull Bot*`;
 }
 
 /**
@@ -58,17 +62,20 @@ async function sendEntryAlert(symbol, price, analysis, contractsPerPart) {
   const safeSymbol = formatSymbol(symbol);
   const text = `
 🚀 *SEÑAL DE LONG - ${safeSymbol}*
-${strengthEmoji[analysis.strength] || '🟢'} Fuerza: *${analysis.strength.toUpperCase()}*
 
-📊 Precio actual: *${formatPrice(price)}*
-📈 RSI(14): *${analysis.rsi}* ${analysis.rsi <= config.indicators.rsiEntryThreshold ? '(retroceso OK)' : ''}
-📉 EMA(20): *${formatPrice(analysis.ema)}*
+${strengthEmoji[analysis.strength] || '🟢'} *Fuerza:* ${analysis.strength.toUpperCase()}
+
+📊 *Precio actual:* ${formatPrice(price)}
+📈 *RSI(14):* ${analysis.rsi} ${analysis.rsi <= config.indicators.rsiEntryThreshold ? '(retroceso OK)' : ''}
+📉 *EMA(20):* ${formatPrice(analysis.ema)}
 ${analysis.priceBelowEMA ? '⬇️ Precio BAJO EMA ✅' : '⬆️ Precio sobre EMA'}
 
-📦 Contratos iniciales: *${initialContracts}* (${contractsPerPart}/parte x ${config.initialParts} partes)
-💵 Notional: *${formatUSD(notionalUSD)}*
-📋 Apalancamiento: *${config.leverage}x*
-  `.trim();
+📦 *Contratos iniciales:* ${initialContracts} (${contractsPerPart}/parte x ${config.initialParts} partes)
+💵 *Notional:* ${formatUSD(notionalUSD)}
+📋 *Apalancamiento:* ${config.leverage}x
+
+🟢 *Acción:* seguimiento de entrada long
+  `.trim() + getMessageFooter();
 
   await send(text);
 }
@@ -83,14 +90,18 @@ async function sendDCAAlert(symbol, price, position, dcaResult) {
   const text = `
 🔄 *RECARGA DCA - ${safeSymbol}*
 
-📊 Precio actual: *${formatPrice(price)}*
-📊 Precio promedio: *${formatPrice(position.avgPrice)}*
-📉 PnL: *${formatPercent(dcaResult.pnlPercent)}*
+🧭 *Motivo:* ajuste por pérdida y reglas de DCA
 
-➕ Agregar: *${dcaResult.partsToAdd} partes* (${contractsAdded} contratos)
-📦 Partes usadas: *${position.partsUsed}/${config.totalParts}*
-📦 Total contratos: *${position.totalContracts}* (${formatUSD(position.totalInvested)} notional)
-  `.trim();
+📊 *Precio actual:* ${formatPrice(price)}
+📊 *Precio promedio:* ${formatPrice(position.avgPrice)}
+📉 *PnL:* ${formatPercent(dcaResult.pnlPercent)}
+
+➕ *Agregar:* ${dcaResult.partsToAdd} partes (${contractsAdded} contratos)
+📦 *Partes usadas:* ${position.partsUsed}/${config.totalParts}
+📦 *Total contratos:* ${position.totalContracts} (${formatUSD(position.totalInvested)} notional)
+
+🟢 *Acción:* agregar exposición en la misma dirección
+  `.trim() + getMessageFooter();
 
   await send(text);
 }
@@ -103,15 +114,17 @@ async function sendTPAlert(symbol, price, position, tpResult) {
   const text = `
 ✅ *TAKE PROFIT - ${safeSymbol}*
 
-🎯 PnL alcanzado: *${formatPercent(tpResult.leveragedPnlPercent)}* (cuenta)
-💰 Ganancia estimada: *${tpResult.estimatedProfitBTC.toFixed(6)} BTC*
+🎯 *Señal:* objetivo alcanzado
 
-📊 Precio actual: *${formatPrice(price)}*
-📊 Precio promedio: *${formatPrice(position.avgPrice)}*
-📦 Contratos: *${position.totalContracts}* (${formatUSD(position.totalInvested)} notional)
+🎯 *PnL alcanzado:* ${formatPercent(tpResult.leveragedPnlPercent)} (cuenta)
+💰 *Ganancia estimada:* ${tpResult.estimatedProfitBTC.toFixed(6)} BTC
 
-🟢 Se recomienda CERRAR la posición.
-  `.trim();
+📊 *Precio actual:* ${formatPrice(price)}
+📊 *Precio promedio:* ${formatPrice(position.avgPrice)}
+📦 *Contratos:* ${position.totalContracts} (${formatUSD(position.totalInvested)} notional)
+
+🟢 *Acción:* cerrar posición
+  `.trim() + getMessageFooter();
 
   await send(text);
 }
@@ -124,16 +137,18 @@ async function sendRiskAlert(symbol, price, position, riskResult) {
   const text = `
 ⚠️ *ALERTA DE RIESGO - ${safeSymbol}*
 
-🚨 Distancia a liquidación: *${formatPercent(riskResult.distancePercent)}*
-💀 Precio de liquidación estimado: *${formatPrice(riskResult.liquidationPrice)}* (debajo del precio actual)
+🚨 *Estado:* cercanía a liquidación
 
-📊 Precio actual: *${formatPrice(price)}*
-📊 Precio promedio: *${formatPrice(position.avgPrice)}*
-📉 PnL: *${formatPercent(riskResult.pnlPercent || 0)}*
-📦 Contratos: *${position.totalContracts}*
+🚨 *Distancia a liquidación:* ${formatPercent(riskResult.distancePercent)}
+💀 *Precio de liquidación estimado:* ${formatPrice(riskResult.liquidationPrice)} (debajo del precio actual)
 
-⚠️ Evalúa si conviene mantener la posición.
-  `.trim();
+📊 *Precio actual:* ${formatPrice(price)}
+📊 *Precio promedio:* ${formatPrice(position.avgPrice)}
+📉 *PnL:* ${formatPercent(riskResult.pnlPercent || 0)}
+📦 *Contratos:* ${position.totalContracts}
+
+⚠️ *Acción:* evaluar si conviene mantener la posición
+  `.trim() + getMessageFooter();
 
   await send(text);
 }
@@ -143,23 +158,31 @@ async function sendRiskAlert(symbol, price, position, riskResult) {
  */
 async function sendDailySummary(positionsSummary) {
   let text = `📋 *RESUMEN DIARIO - ${new Date().toLocaleDateString('es-ES')}*\n\n`;
+  const anyActive = positionsSummary.some((summary) => summary.active);
 
   for (const summary of positionsSummary) {
     const statusEmoji = summary.active ? '🟢' : '⚪';
     text += `${statusEmoji} ${formatSymbol(summary.symbol)}\n`;
 
     if (summary.active) {
-      text += `  📊 Precio actual: ${formatPrice(summary.currentPrice)}\n`;
-      text += `  📊 Precio promedio: ${formatPrice(summary.avgPrice)}\n`;
-      text += `  📈 PnL: ${formatPercent(summary.pnlPercent)}\n`;
-      text += `  📦 Partes: ${summary.partsUsed}/${config.totalParts} (${summary.totalContracts} contratos)\n`;
-      text += `  💵 Notional: ${formatUSD(summary.totalInvested)}\n`;
-      text += `  💀 Liquidación: ${formatPrice(summary.liquidationPrice)}\n`;
+      text += `  📊 *Precio actual:* ${formatPrice(summary.currentPrice)}\n`;
+      text += `  📊 *Precio promedio:* ${formatPrice(summary.avgPrice)}\n`;
+      text += `  📈 *PnL:* ${formatPercent(summary.pnlPercent)}\n`;
+      text += `  📦 *Partes:* ${summary.partsUsed}/${config.totalParts} (${summary.totalContracts} contratos)\n`;
+      text += `  💵 *Notional:* ${formatUSD(summary.totalInvested)}\n`;
+      text += `  💀 *Liquidación:* ${formatPrice(summary.liquidationPrice)}\n`;
+      text += `  🟢 *Estado:* posición abierta\n`;
     } else {
-      text += `  Sin posición activa\n`;
+      text += `  ⚪ *Estado:* sin posición activa\n`;
     }
     text += '\n';
   }
+
+  text += anyActive
+    ? '🟢 *Estado general del bot:* hay posición activa\n'
+    : '⚪ *Estado general del bot:* sin posiciones activas\n';
+
+  text += getMessageFooter();
 
   await send(text.trim());
 }
@@ -187,15 +210,18 @@ async function sendNoSignalReport(symbol, price, analysis) {
   const text = `
 🔍 *CHEQUEO SIN SEÑAL - ${safeSymbol}*
 
+🧭 *Estado:* esperando pullback válido
+
 ${rsiLine}
 ${emaLine}
 
-📊 Precio actual: *${formatPrice(price)}*
-📊 EMA(${config.indicators.emaPeriod}): *${formatPrice(analysis.ema)}*
-📈 RSI(${config.indicators.rsiPeriod}) anterior: *${analysis.previousRSI}*
+📊 *Precio actual:* ${formatPrice(price)}
+📊 *EMA(${config.indicators.emaPeriod}):* ${formatPrice(analysis.ema)}
+📈 *RSI(${config.indicators.rsiPeriod}) anterior:* ${analysis.previousRSI}
 
-⏳ Sin condiciones para abrir long.
-  `.trim();
+⏳ *Acción:* no abrir long todavía
+
+  `.trim() + getMessageFooter();
 
   await send(text);
 }
@@ -207,19 +233,23 @@ async function sendStartup(tradingEnabled = false) {
   const modeLine = tradingEnabled
     ? '🟢 Modo: TRADING REAL ACTIVADO'
     : '🟡 Modo: Solo alertas (sin ordenes reales)';
-  const symbolLine = '📌 Par: BTCUSD_PERP';
+  const symbolLine = `📌 Par: ${formatSymbol('BTCUSD_PERP')}`;
   const capitalLine = `💰 Capital: ${config.capitalBTC} BTC`;
 
   const text = `
 🤖 *Crypto Bull Bot iniciado*
 
+🟢 *Modo operativo:* ${tradingEnabled ? 'TRADING REAL' : 'solo alertas'}
+
 ${symbolLine}
 ${modeLine}
 ${capitalLine}
-📋 Estrategia: Long ${config.leverage}x con DCA
+📋 *Estrategia:* Long ${config.leverage}x con DCA
 ⏰ Chequeo: cada hora
 📋 Resumen diario: 22:00
-  `.trim();
+
+📌 *Cobertura:* un único mercado fijo
+  `.trim() + getMessageFooter();
 
   await send(text);
 }
