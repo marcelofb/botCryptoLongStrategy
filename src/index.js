@@ -10,6 +10,34 @@ const { calcLongPnL } = require('./strategy');
 
 // Estado global
 let state = null;
+const symbol = config.symbol;
+const tradingEnabled = String(process.env.TRADING_ENABLED || 'false').toLowerCase() === 'true';
+
+function ensureTradingConfig() {
+  if (!tradingEnabled) return;
+  if (!process.env.BINANCE_API_KEY || !process.env.BINANCE_API_SECRET) {
+    throw new Error('TRADING_ENABLED=true pero faltan BINANCE_API_KEY o BINANCE_API_SECRET en .env');
+  }
+}
+
+function buildClientOrderId(prefix, symbol) {
+  const ts = Date.now();
+  return `${prefix}-${symbol}-${ts}`.slice(0, 36);
+}
+
+function toFiniteNumber(value, fallback = null) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function getExecutedContracts(order, fallback) {
+  return toFiniteNumber(order?.executedQty, toFiniteNumber(order?.cumQty, fallback));
+}
+
+function getExecutedAvgPrice(order, fallbackPrice) {
+  const avg = toFiniteNumber(order?.avgPrice, null);
+  return avg && avg > 0 ? avg : fallbackPrice;
+}
 
 /**
  * Ciclo principal: evalúa cada par y envía alertas según corresponda.
@@ -17,21 +45,25 @@ let state = null;
 async function checkPairs() {
   console.log(`\n[${new Date().toLocaleString('es-ES')}] Ejecutando chequeo...`);
 
-  await Promise.all(config.pairs.map(async (symbol) => {
-    try {
-      await checkPair(symbol);
-    } catch (err) {
-      console.error(`Error chequeando ${symbol}:`, err.message);
-      // Reintento una vez
-      try {
-        console.log(`Reintentando ${symbol}...`);
-        await new Promise((r) => setTimeout(r, 5000));
-        await checkPair(symbol);
-      } catch (retryErr) {
-        console.error(`Reintento fallido para ${symbol}:`, retryErr.message);
-      }
+  try {
+    await checkPair(symbol);
+  } catch (err) {
+    console.error(`Error chequeando ${symbol}:`, err.message);
+    // En trading real evitamos reintentos automáticos para no duplicar órdenes.
+    if (tradingEnabled) {
+      await telegram.send(`⚠️ Error en ${symbol} con trading real habilitado: ${err.message}\nNo se reintenta automáticamente para evitar duplicar órdenes.`);
+      return;
     }
-  }));
+
+    // En modo alertas sí reintentamos una vez.
+    try {
+      console.log(`Reintentando ${symbol}...`);
+      await new Promise((r) => setTimeout(r, 5000));
+      await checkPair(symbol);
+    } catch (retryErr) {
+      console.error(`Reintento fallido para ${symbol}:`, retryErr.message);
+    }
+  }
 }
 
 /**
@@ -62,11 +94,42 @@ async function checkPair(symbol) {
     const { shouldOpen, analysis } = strategy.shouldOpenLong(klines);
     if (shouldOpen) {
       // Calcular contractsPerPart al momento de abrir y congelarlo en la posición
-      const contractsPerPart = Math.max(1, Math.round((config.capitalPerPairBTC * price) / (config.totalParts * 100)));
+      const contractsPerPart = Math.max(1, Math.round((config.capitalBTC * price) / (config.totalParts * 100)));
+      const initialContracts = config.initialParts * contractsPerPart;
+      let executedContracts = initialContracts;
+      let executedPrice = price;
+      let appliedContractsPerPart = contractsPerPart;
       console.log(`  🟢 Señal de entrada detectada para ${symbol} (${analysis.strength}) — ${contractsPerPart} contratos/parte`);
-      position.openPosition(state, symbol, price, contractsPerPart);
-      await history.logOpen(symbol, price, config.initialParts);
-      await telegram.sendEntryAlert(symbol, price, analysis, contractsPerPart);
+
+      if (tradingEnabled) {
+        await binance.ensureLeverage(symbol, config.leverage);
+        const order = await binance.placeMarketOrder(symbol, 'BUY', initialContracts, {
+          clientOrderId: buildClientOrderId('entry', symbol),
+        });
+        if (order.quantityAdjusted) {
+          console.log(`  ℹ️ ENTRY ajustada por filtros ${symbol}: ${order.requestedQuantity} → ${order.sentQuantity} (${order.adjustmentNotes.join(', ')})`);
+        }
+
+        const filledQty = getExecutedContracts(order, order.sentQuantity);
+        if (!filledQty || filledQty <= 0) {
+          throw new Error(`ENTRY sin ejecución confirmada para ${symbol} (orderId=${order.orderId})`);
+        }
+        executedContracts = filledQty;
+        executedPrice = getExecutedAvgPrice(order, price);
+        appliedContractsPerPart = executedContracts / config.initialParts;
+        console.log(`  ✅ Orden ENTRY ejecutada ${symbol}: side=BUY qty=${executedContracts} orderId=${order.orderId}`);
+      }
+
+      position.openPosition(
+        state,
+        symbol,
+        executedPrice,
+        appliedContractsPerPart,
+        config.initialParts,
+        { contracts: executedContracts, parts: config.initialParts },
+      );
+      await history.logOpen(symbol, executedPrice, config.initialParts, executedContracts);
+      await telegram.sendEntryAlert(symbol, executedPrice, analysis, appliedContractsPerPart);
     } else {
       const rsiTarget = config.indicators.rsiEntryThreshold;
       const rsiGap = (analysis.rsi - rsiTarget).toFixed(1);
@@ -91,9 +154,35 @@ async function checkPair(symbol) {
     const tpResult = strategy.shouldTakeProfit(pos, price);
     if (tpResult.shouldTP) {
       console.log(`  ✅ TP alcanzado para ${symbol}: ${tpResult.leveragedPnlPercent.toFixed(2)}% cuenta (${tpResult.pnlPercent.toFixed(2)}% precio)`);
+
+      let closedContracts = pos.totalContracts;
+
+      if (tradingEnabled) {
+        const order = await binance.placeMarketOrder(symbol, 'SELL', pos.totalContracts, {
+          reduceOnly: true,
+          clientOrderId: buildClientOrderId('tpclose', symbol),
+        });
+        if (order.quantityAdjusted) {
+          console.log(`  ℹ️ TP CLOSE ajustada por filtros ${symbol}: ${order.requestedQuantity} → ${order.sentQuantity} (${order.adjustmentNotes.join(', ')})`);
+        }
+
+        const filledCloseQty = getExecutedContracts(order, order.sentQuantity);
+        if (!filledCloseQty || filledCloseQty <= 0) {
+          throw new Error(`TP CLOSE sin ejecución confirmada para ${symbol} (orderId=${order.orderId})`);
+        }
+        closedContracts = Math.min(filledCloseQty, pos.totalContracts);
+        console.log(`  ✅ Orden TP CLOSE ejecutada ${symbol}: side=SELL qty=${closedContracts} orderId=${order.orderId}`);
+      }
+
       await history.logClose(symbol, price, pos, tpResult.pnlPercent, tpResult.leveragedPnlPercent);
-      await telegram.sendTPAlert(symbol, price, pos, tpResult);
-      position.closePosition(state, symbol);
+      if (closedContracts >= pos.totalContracts) {
+        await telegram.sendTPAlert(symbol, price, pos, tpResult);
+        position.closePosition(state, symbol);
+      } else {
+        position.reducePositionContracts(state, symbol, closedContracts);
+        const remaining = position.getPosition(state, symbol);
+        await telegram.send(`⚠️ TP parcial en ${symbol}: cerrados ${closedContracts} contratos, quedan ${remaining.totalContracts}.`);
+      }
       return; // No evaluar más
     }
 
@@ -110,11 +199,41 @@ async function checkPair(symbol) {
     if (dcaResult.shouldDCA) {
       const rsiTag = dcaResult.rsi1h !== null ? ` | RSI 1h: ${dcaResult.rsi1h}` : '';
       console.log(`  🔄 DCA para ${symbol}: agregar ${dcaResult.partsToAdd} partes${rsiTag}`);
+      const contractsToAdd = dcaResult.partsToAdd * pos.contractsPerPart;
+      let executedContracts = contractsToAdd;
+      let executedPrice = price;
+      let appliedParts = dcaResult.partsToAdd;
+
+      if (tradingEnabled) {
+        await binance.ensureLeverage(symbol, config.leverage);
+        const order = await binance.placeMarketOrder(symbol, 'BUY', contractsToAdd, {
+          clientOrderId: buildClientOrderId('dca', symbol),
+        });
+        if (order.quantityAdjusted) {
+          console.log(`  ℹ️ DCA ajustada por filtros ${symbol}: ${order.requestedQuantity} → ${order.sentQuantity} (${order.adjustmentNotes.join(', ')})`);
+        }
+
+        const filledQty = getExecutedContracts(order, order.sentQuantity);
+        if (!filledQty || filledQty <= 0) {
+          throw new Error(`DCA sin ejecución confirmada para ${symbol} (orderId=${order.orderId})`);
+        }
+        executedContracts = filledQty;
+        executedPrice = getExecutedAvgPrice(order, price);
+        appliedParts = executedContracts / pos.contractsPerPart;
+        console.log(`  ✅ Orden DCA ejecutada ${symbol}: side=BUY qty=${executedContracts} orderId=${order.orderId}`);
+      }
+
       const avgBefore = pos.avgPrice;
-      position.addEntry(state, symbol, price, dcaResult.partsToAdd);
+      position.addEntry(state, symbol, executedPrice, appliedParts, {
+        contracts: executedContracts,
+        parts: appliedParts,
+      });
       const updatedPos = position.getPosition(state, symbol);
-      await history.logDCA(symbol, price, dcaResult.partsToAdd, avgBefore, updatedPos.avgPrice, updatedPos.partsUsed);
-      await telegram.sendDCAAlert(symbol, price, updatedPos, dcaResult);
+      await history.logDCA(symbol, executedPrice, appliedParts, avgBefore, updatedPos.avgPrice, updatedPos.partsUsed, executedContracts);
+      await telegram.sendDCAAlert(symbol, executedPrice, updatedPos, {
+        ...dcaResult,
+        partsToAdd: appliedParts,
+      });
     } else if (dcaResult.reason) {
       const rsiTag = dcaResult.rsi1h !== null ? ` (RSI 1h: ${dcaResult.rsi1h})` : '';
       console.log(`  ⏸ DCA bloqueado para ${symbol}: ${dcaResult.reason}${rsiTag}`);
@@ -129,33 +248,30 @@ async function sendDailySummary() {
   console.log(`\n[${new Date().toLocaleString('es-ES')}] Enviando resumen diario...`);
 
   const summaries = [];
+  const pos = position.getPosition(state, symbol);
+  let currentPrice = 0;
+  try {
+    currentPrice = await binance.getPrice(symbol);
+  } catch (err) {
+    console.error(`Error obteniendo precio de ${symbol}:`, err.message);
+  }
 
-  for (const symbol of config.pairs) {
-    const pos = position.getPosition(state, symbol);
-    let currentPrice = 0;
-    try {
-      currentPrice = await binance.getPrice(symbol);
-    } catch (err) {
-      console.error(`Error obteniendo precio de ${symbol}:`, err.message);
-    }
-
-    if (pos.active) {
-      const pnlPercent = calcLongPnL(pos.avgPrice, currentPrice);
-      const liquidationPrice = pos.avgPrice * (1 - 1 / config.leverage);
-      summaries.push({
-        symbol,
-        active: true,
-        currentPrice,
-        avgPrice: pos.avgPrice,
-        pnlPercent: Math.round(pnlPercent * config.leverage * 100) / 100,
-        partsUsed: pos.partsUsed,
-        totalContracts: pos.totalContracts,
-        totalInvested: pos.totalInvested,
-        liquidationPrice: Math.round(liquidationPrice * 100) / 100,
-      });
-    } else {
-      summaries.push({ symbol, active: false, currentPrice });
-    }
+  if (pos.active) {
+    const pnlPercent = calcLongPnL(pos.avgPrice, currentPrice);
+    const liquidationPrice = pos.avgPrice * (1 - 1 / config.leverage);
+    summaries.push({
+      symbol,
+      active: true,
+      currentPrice,
+      avgPrice: pos.avgPrice,
+      pnlPercent: Math.round(pnlPercent * config.leverage * 100) / 100,
+      partsUsed: pos.partsUsed,
+      totalContracts: pos.totalContracts,
+      totalInvested: pos.totalInvested,
+      liquidationPrice: Math.round(liquidationPrice * 100) / 100,
+    });
+  } else {
+    summaries.push({ symbol, active: false, currentPrice });
   }
 
   await telegram.sendDailySummary(summaries);
@@ -165,9 +281,17 @@ async function sendDailySummary() {
  * Punto de entrada principal.
  */
 async function main() {
+  ensureTradingConfig();
+
+  if (tradingEnabled) {
+    const rules = await binance.getSymbolMarketRules(symbol);
+    console.log(`🔎 Filtros ${symbol}: minQty=${rules.minQty}, maxQty=${rules.maxQty}, step=${rules.stepSize} (${rules.filterType})`);
+  }
+
   console.log('🤖 Crypto Bull Bot — Long 5x');
-  console.log(`📌 Par: ${config.pairs.join(', ')}`);
-  console.log(`💰 Capital: ${config.capitalPerPairBTC} BTC por par`);
+  console.log(`📌 Par: ${symbol}`);
+  console.log(`🧭 Modo: ${tradingEnabled ? 'TRADING REAL' : 'Solo alertas (paper/simulado)'}`);
+  console.log(`💰 Capital: ${config.capitalBTC} BTC`);
   console.log(`⏰ Chequeo: ${config.checkCron}`);
   console.log(`📋 Resumen diario: ${config.dailySummaryCron}`);
   console.log('');
@@ -175,14 +299,12 @@ async function main() {
   // Cargar estado persistido
   state = position.loadState();
   console.log('📂 Estado cargado desde disco');
-  for (const symbol of config.pairs) {
-    const pos = position.getPosition(state, symbol);
-    console.log(`  ${symbol}: ${pos.active ? 'activa' : 'inactiva'} (${pos.partsUsed} partes, ${pos.totalContracts} contratos)`);
-  }
+  const pos = position.getPosition(state, symbol);
+  console.log(`  ${symbol}: ${pos.active ? 'activa' : 'inactiva'} (${pos.partsUsed} partes, ${pos.totalContracts} contratos)`);
 
   // Inicializar Telegram
   telegram.init();
-  await telegram.sendStartup();
+  await telegram.sendStartup(tradingEnabled);
 
   // Chequeo inicial al arrancar
   await checkPairs();

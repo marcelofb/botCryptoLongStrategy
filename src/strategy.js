@@ -24,7 +24,7 @@ function shouldOpenLong(klines) {
 /**
  * Evalúa si hay que hacer DCA (agregar contratos) y cuántas partes.
  * Mismas reglas de % de pérdida en cuenta que el bear bot.
- * Límite: 1 DCA por día por par.
+ * Límite: 1 DCA por día.
  * Momento óptimo: RSI(1h) ≤ dcaOptimal1hRSI (precio bajando = mejor entrada long más barata).
  * Fallback: si ya pasó dcaFallbackHour, ejecutar independientemente del RSI 1h.
  *

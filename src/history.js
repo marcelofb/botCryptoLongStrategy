@@ -55,11 +55,11 @@ function getOpenTrade(history, symbol) {
 /**
  * Registra apertura de posición.
  */
-async function logOpen(symbol, price, parts) {
+async function logOpen(symbol, price, parts, contracts = null) {
   await withLock((history) => {
     if (!history[symbol]) history[symbol] = [];
     history[symbol].push({
-      open: { date: localISOString(), price, parts },
+      open: { date: localISOString(), price, parts, contracts },
       dcas: [],
       close: null,
     });
@@ -69,11 +69,11 @@ async function logOpen(symbol, price, parts) {
 /**
  * Registra DCA.
  */
-async function logDCA(symbol, price, parts, avgPriceBefore, avgPriceAfter, totalParts) {
+async function logDCA(symbol, price, parts, avgPriceBefore, avgPriceAfter, totalParts, contracts = null) {
   await withLock((history) => {
     const trade = getOpenTrade(history, symbol);
     if (!trade) return;
-    trade.dcas.push({ date: localISOString(), price, parts, avgPriceBefore, avgPriceAfter, totalParts });
+    trade.dcas.push({ date: localISOString(), price, parts, contracts, avgPriceBefore, avgPriceAfter, totalParts });
   });
 }
 

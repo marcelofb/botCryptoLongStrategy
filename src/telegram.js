@@ -5,11 +5,8 @@ const { formatUSD, formatPercent, formatPrice } = require('./utils');
 let bot = null;
 let chatIds = [];
 
-/**
- * Escapa caracteres conflictivos para parse_mode Markdown de Telegram.
- */
-function escapeMarkdown(value) {
-  return String(value).replace(/([_*`\[])/g, '\\$1');
+function formatSymbol(symbol) {
+  return `\`${String(symbol).replace(/`/g, '')}\``;
 }
 
 /**
@@ -34,7 +31,7 @@ function init() {
 }
 
 /**
- * Envía un mensaje por Telegram con formato Markdown a todos los destinatarios.
+ * Envía un mensaje por Telegram a todos los destinatarios.
  */
 async function send(text) {
   if (!bot || chatIds.length === 0) {
@@ -57,18 +54,18 @@ async function sendEntryAlert(symbol, price, analysis, contractsPerPart) {
   const strengthEmoji = { strong: '🟢🟢🟢', medium: '🟢🟢', weak: '🟢' };
   const initialContracts = config.initialParts * contractsPerPart;
   const notionalUSD = initialContracts * 100;
-  const safeSymbol = escapeMarkdown(symbol);
 
+  const safeSymbol = formatSymbol(symbol);
   const text = `
-🚀 *SEÑAL DE LONG — ${safeSymbol}*
+🚀 *SEÑAL DE LONG - ${safeSymbol}*
 ${strengthEmoji[analysis.strength] || '🟢'} Fuerza: *${analysis.strength.toUpperCase()}*
 
 📊 Precio actual: *${formatPrice(price)}*
-📈 RSI(14): *${analysis.rsi}* ${analysis.rsi <= config.indicators.rsiEntryThreshold ? '(retroceso ✅)' : ''}
+📈 RSI(14): *${analysis.rsi}* ${analysis.rsi <= config.indicators.rsiEntryThreshold ? '(retroceso OK)' : ''}
 📉 EMA(20): *${formatPrice(analysis.ema)}*
 ${analysis.priceBelowEMA ? '⬇️ Precio BAJO EMA ✅' : '⬆️ Precio sobre EMA'}
 
-📦 Contratos iniciales: *${initialContracts}* (${contractsPerPart}/parte × ${config.initialParts} partes)
+📦 Contratos iniciales: *${initialContracts}* (${contractsPerPart}/parte x ${config.initialParts} partes)
 💵 Notional: *${formatUSD(notionalUSD)}*
 📋 Apalancamiento: *${config.leverage}x*
   `.trim();
@@ -81,10 +78,10 @@ ${analysis.priceBelowEMA ? '⬇️ Precio BAJO EMA ✅' : '⬆️ Precio sobre E
  */
 async function sendDCAAlert(symbol, price, position, dcaResult) {
   const contractsAdded = dcaResult.partsToAdd * position.contractsPerPart;
-  const safeSymbol = escapeMarkdown(symbol);
+  const safeSymbol = formatSymbol(symbol);
 
   const text = `
-🔄 *RECARGA DCA — ${safeSymbol}*
+🔄 *RECARGA DCA - ${safeSymbol}*
 
 📊 Precio actual: *${formatPrice(price)}*
 📊 Precio promedio: *${formatPrice(position.avgPrice)}*
@@ -102,10 +99,9 @@ async function sendDCAAlert(symbol, price, position, dcaResult) {
  * Alerta de Take Profit alcanzado.
  */
 async function sendTPAlert(symbol, price, position, tpResult) {
-  const safeSymbol = escapeMarkdown(symbol);
-
+  const safeSymbol = formatSymbol(symbol);
   const text = `
-✅ *TAKE PROFIT — ${safeSymbol}*
+✅ *TAKE PROFIT - ${safeSymbol}*
 
 🎯 PnL alcanzado: *${formatPercent(tpResult.leveragedPnlPercent)}* (cuenta)
 💰 Ganancia estimada: *${tpResult.estimatedProfitBTC.toFixed(6)} BTC*
@@ -124,13 +120,12 @@ async function sendTPAlert(symbol, price, position, tpResult) {
  * Alerta de riesgo alto (cerca de liquidación por abajo).
  */
 async function sendRiskAlert(symbol, price, position, riskResult) {
-  const safeSymbol = escapeMarkdown(symbol);
-
+  const safeSymbol = formatSymbol(symbol);
   const text = `
-⚠️ *ALERTA DE RIESGO — ${safeSymbol}*
+⚠️ *ALERTA DE RIESGO - ${safeSymbol}*
 
 🚨 Distancia a liquidación: *${formatPercent(riskResult.distancePercent)}*
-💀 Precio de liquidación estimado: *${formatPrice(riskResult.liquidationPrice)}* (↓ debajo del precio actual)
+💀 Precio de liquidación estimado: *${formatPrice(riskResult.liquidationPrice)}* (debajo del precio actual)
 
 📊 Precio actual: *${formatPrice(price)}*
 📊 Precio promedio: *${formatPrice(position.avgPrice)}*
@@ -147,11 +142,11 @@ async function sendRiskAlert(symbol, price, position, riskResult) {
  * Resumen diario del estado de todas las posiciones.
  */
 async function sendDailySummary(positionsSummary) {
-  let text = `📋 *RESUMEN DIARIO — ${new Date().toLocaleDateString('es-ES')}*\n\n`;
+  let text = `📋 *RESUMEN DIARIO - ${new Date().toLocaleDateString('es-ES')}*\n\n`;
 
   for (const summary of positionsSummary) {
     const statusEmoji = summary.active ? '🟢' : '⚪';
-    text += `${statusEmoji} *${escapeMarkdown(summary.symbol)}*\n`;
+    text += `${statusEmoji} ${formatSymbol(summary.symbol)}\n`;
 
     if (summary.active) {
       text += `  📊 Precio actual: ${formatPrice(summary.currentPrice)}\n`;
@@ -173,7 +168,7 @@ async function sendDailySummary(positionsSummary) {
  * Reporte de chequeo sin señal: muestra indicadores actuales y cuánto falta para disparar la entrada.
  */
 async function sendNoSignalReport(symbol, price, analysis) {
-  const safeSymbol = escapeMarkdown(symbol);
+  const safeSymbol = formatSymbol(symbol);
   const rsiTarget = config.indicators.rsiEntryThreshold;
   const rsiGap = (analysis.rsi - rsiTarget).toFixed(1);
   const emaGapPercent = ((price - analysis.ema) / analysis.ema * 100).toFixed(2);
@@ -182,15 +177,15 @@ async function sendNoSignalReport(symbol, price, analysis) {
   const emaOk = price < analysis.ema;
 
   const rsiLine = rsiOk
-    ? `✅ RSI: *${analysis.rsi}* (retroceso ✔)`
-    : `❌ RSI: *${analysis.rsi}* — faltan *${rsiGap} puntos* para bajar a ${rsiTarget}`;
+    ? `✅ RSI: ${analysis.rsi} (retroceso OK)`
+    : `❌ RSI: ${analysis.rsi} - faltan ${rsiGap} puntos para bajar a ${rsiTarget}`;
 
   const emaLine = emaOk
-    ? `✅ Precio BAJO EMA: *${formatPrice(price)}* < *${formatPrice(analysis.ema)}* (-${Math.abs(emaGapPercent)}%)`
-    : `❌ Precio SOBRE EMA: *${formatPrice(price)}* > *${formatPrice(analysis.ema)}* (+${emaGapPercent}%, necesita bajar *${formatUSD(Math.abs(price - analysis.ema))}*)`;
+    ? `✅ Precio BAJO EMA: ${formatPrice(price)} < ${formatPrice(analysis.ema)} (-${Math.abs(emaGapPercent)}%)`
+    : `❌ Precio SOBRE EMA: ${formatPrice(price)} > ${formatPrice(analysis.ema)} (+${emaGapPercent}%, necesita bajar ${formatUSD(Math.abs(price - analysis.ema))})`;
 
   const text = `
-🔍 *CHEQUEO SIN SEÑAL — ${safeSymbol}*
+🔍 *CHEQUEO SIN SEÑAL - ${safeSymbol}*
 
 ${rsiLine}
 ${emaLine}
@@ -208,16 +203,21 @@ ${emaLine}
 /**
  * Mensaje de inicio del bot.
  */
-async function sendStartup() {
-  const safePairs = config.pairs.map(escapeMarkdown).join(', ');
+async function sendStartup(tradingEnabled = false) {
+  const modeLine = tradingEnabled
+    ? '🟢 Modo: TRADING REAL ACTIVADO'
+    : '🟡 Modo: Solo alertas (sin ordenes reales)';
+  const symbolLine = '📌 Par: BTCUSD_PERP';
+  const capitalLine = `💰 Capital: ${config.capitalBTC} BTC`;
 
   const text = `
 🤖 *Crypto Bull Bot iniciado*
 
-📌 Par: ${safePairs}
-💰 Capital: *${config.capitalPerPairBTC} BTC* por par
+${symbolLine}
+${modeLine}
+${capitalLine}
 📋 Estrategia: Long ${config.leverage}x con DCA
-⏰ Chequeo: cada 1 hora
+⏰ Chequeo: cada hora
 📋 Resumen diario: 22:00
   `.trim();
 

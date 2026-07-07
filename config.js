@@ -1,13 +1,13 @@
 module.exports = {
-  // Par a monitorear (Binance coin-margined futures DAPI)
-  pairs: ['BTCUSD_PERP'],
+  // Simbolo fijo a monitorear (Binance coin-margined futures DAPI)
+  symbol: 'BTCUSD_PERP',
 
   // Leverage de la estrategia
   leverage: 5,
 
-  // Capital total por par en BTC
+  // Capital total objetivo en BTC para BTCUSD_PERP
   // El bot calcula contratos/parte al abrir cada posición según el precio vigente
-  capitalPerPairBTC: 0.1,
+  capitalBTC: 0.1,
 
   // Número de partes en que se divide el capital
   totalParts: 60,
@@ -23,7 +23,7 @@ module.exports = {
     { maxLoss: -Infinity, parts: 6 },  // más de -15% cuenta → 6 partes
   ],
 
-  // Máximo de recargas DCA por día por par
+  // Máximo de recargas DCA por día
   maxDCAPerDay: 1,
 
   // RSI máximo en 1h para considerar que es un buen momento de recarga DCA
