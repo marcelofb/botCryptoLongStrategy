@@ -230,9 +230,6 @@ ${emaLine}
  * Mensaje de inicio del bot.
  */
 async function sendStartup(tradingEnabled = false) {
-  const modeLine = tradingEnabled
-    ? '🟢 Modo: TRADING REAL ACTIVADO'
-    : '🟡 Modo: Solo alertas (sin ordenes reales)';
   const symbolLine = `📌 Par: ${formatSymbol('BTCUSD_PERP')}`;
   const capitalLine = `💰 Capital: ${config.capitalBTC} BTC`;
 
@@ -242,13 +239,10 @@ async function sendStartup(tradingEnabled = false) {
 🟢 *Modo operativo:* ${tradingEnabled ? 'TRADING REAL' : 'solo alertas'}
 
 ${symbolLine}
-${modeLine}
 ${capitalLine}
 📋 *Estrategia:* Long ${config.leverage}x con DCA
 ⏰ Chequeo: cada hora
 📋 Resumen diario: 22:00
-
-📌 *Cobertura:* un único mercado fijo
   `.trim() + getMessageFooter();
 
   await send(text);
