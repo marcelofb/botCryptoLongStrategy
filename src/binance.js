@@ -108,6 +108,24 @@ async function getKlines(symbol, interval, limit = 100) {
 }
 
 /**
+ * Obtiene la posición abierta real en Binance para el símbolo.
+ * Retorna la cantidad absoluta de contratos abiertos en long/short según el signo.
+ */
+async function getOpenPositionQuantity(symbol) {
+  const data = await signedRequest('GET', '/dapi/v1/positionRisk', {
+    symbol,
+  });
+
+  const positionInfo = Array.isArray(data) ? data.find((entry) => entry.symbol === symbol) : data;
+  if (!positionInfo) {
+    return 0;
+  }
+
+  const positionAmt = Math.abs(toNumber(positionInfo.positionAmt, 0));
+  return positionAmt;
+}
+
+/**
  * Obtiene reglas de mercado para validar quantity en órdenes MARKET de DAPI.
  */
 async function getSymbolMarketRules(symbol, forceRefresh = false) {
@@ -296,6 +314,7 @@ async function placeMarketOrder(symbol, side, quantity, options = {}) {
 module.exports = {
   getPrice,
   getKlines,
+  getOpenPositionQuantity,
   getSymbolMarketRules,
   validateMarketOrderQuantity,
   sanitizeMarketOrderQuantity,

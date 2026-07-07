@@ -36,7 +36,7 @@ Si ya hay posicion y el precio baja:
 ### Take Profit
 
 - Si el precio sube lo suficiente (segun `takeProfitPercent`), activa cierre.
-- En modo real envia `SELL MARKET` con `reduceOnly`.
+- En modo real lee la posicion abierta real en Binance, envia `SELL MARKET` con `reduceOnly` y reintenta si queda remanente hasta quedar flat.
 
 ### Riesgo de liquidacion
 
@@ -63,14 +63,16 @@ flowchart TD
     K --> L{Take Profit alcanzado?}
     L -- Si --> M{TRADING_ENABLED?}
     M -- No --> N[Cerrar estado local + alerta TP]
-    M -- Si --> O[Enviar SELL MARKET reduceOnly]
-    O --> P{Cierre total o parcial?}
-    P -- Total --> N
-    P -- Parcial --> Q[Reducir posicion local proporcional]
+    M -- Si --> O[Leer posicion real en Binance]
+    O --> P[Enviar SELL MARKET reduceOnly]
+    P --> Q{Queda remanente?}
+    Q -- No --> N
+    Q -- Si --> R[Reintentar cierre sobre el remanente]
+    R --> O
 
-    L -- No --> R{DCA habilitado por reglas?}
-    R -- No --> S[No operar]
-    R -- Si --> T[Calcular contratos DCA]
+    L -- No --> D{DCA habilitado por reglas?}
+    D -- No --> S[No operar]
+    D -- Si --> T[Calcular contratos DCA]
     T --> U{TRADING_ENABLED?}
     U -- No --> V[Actualizar estado local + alerta DCA]
     U -- Si --> W[Validar filtros Binance + enviar BUY MARKET]
@@ -88,6 +90,7 @@ flowchart LR
     IDX --> HIS[src/history.js]
     IDX --> TEL[src/telegram.js]
     STR --> IND[src/indicators.js]
+    BIN --> PR[Binance positionRisk API]
     POS --> DATA1[data/state.json]
     HIS --> DATA2[data/history.json]
 ```
@@ -106,7 +109,7 @@ Cuando `TRADING_ENABLED=true`:
 5. Sincroniza estado local con datos reales de ejecucion:
    - `executedQty`
    - `avgPrice`
-6. Si TP cierra parcial, mantiene posicion remanente en estado local.
+6. Si TP deja remanente, reintenta el cierre sobre la posicion real hasta quedar flat.
 
 ## 6) Variables de entorno (.env)
 

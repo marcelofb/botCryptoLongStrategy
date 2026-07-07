@@ -39,6 +39,62 @@ function getExecutedAvgPrice(order, fallbackPrice) {
   return avg && avg > 0 ? avg : fallbackPrice;
 }
 
+async function closePositionFully(symbol, positionToClose, price, maxAttempts = 3) {
+  let totalClosedContracts = 0;
+  let lastOrder = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const realOpenContracts = await binance.getOpenPositionQuantity(symbol);
+    if (realOpenContracts <= 0) {
+      return {
+        closedFully: true,
+        totalClosedContracts,
+        remainingContracts: 0,
+        lastOrder,
+      };
+    }
+
+    const order = await binance.placeMarketOrder(symbol, 'SELL', realOpenContracts, {
+      reduceOnly: true,
+      clientOrderId: buildClientOrderId(`tpclose${attempt}`, symbol),
+    });
+
+    if (order.quantityAdjusted) {
+      console.log(`  ℹ️ TP CLOSE ajustada por filtros ${symbol}: ${order.requestedQuantity} → ${order.sentQuantity} (${order.adjustmentNotes.join(', ')})`);
+    }
+
+    const filledCloseQty = getExecutedContracts(order, order.sentQuantity);
+    if (!filledCloseQty || filledCloseQty <= 0) {
+      throw new Error(`TP CLOSE sin ejecución confirmada para ${symbol} (orderId=${order.orderId})`);
+    }
+
+    lastOrder = order;
+    totalClosedContracts += filledCloseQty;
+    const remainingContracts = await binance.getOpenPositionQuantity(symbol);
+
+    console.log(`  ✅ Orden TP CLOSE ejecutada ${symbol}: side=SELL qty=${filledCloseQty} orderId=${order.orderId}`);
+
+    if (remainingContracts > 0) {
+      console.log(`  ↻ TP parcial detectado en ${symbol}: quedan ${remainingContracts} contratos, reintentando cierre...`);
+    } else {
+      return {
+        closedFully: true,
+        totalClosedContracts,
+        remainingContracts: 0,
+        lastOrder,
+      };
+    }
+  }
+
+  const remainingContracts = await binance.getOpenPositionQuantity(symbol);
+  return {
+    closedFully: remainingContracts <= 0,
+    totalClosedContracts,
+    remainingContracts,
+    lastOrder,
+  };
+}
+
 /**
  * Ciclo principal: evalúa cada par y envía alertas según corresponda.
  */
@@ -155,33 +211,27 @@ async function checkPair(symbol) {
     if (tpResult.shouldTP) {
       console.log(`  ✅ TP alcanzado para ${symbol}: ${tpResult.leveragedPnlPercent.toFixed(2)}% cuenta (${tpResult.pnlPercent.toFixed(2)}% precio)`);
 
-      let closedContracts = pos.totalContracts;
+      let closeResult = {
+        closedFully: true,
+        totalClosedContracts: pos.totalContracts,
+        remainingContracts: 0,
+        lastOrder: null,
+      };
 
       if (tradingEnabled) {
-        const order = await binance.placeMarketOrder(symbol, 'SELL', pos.totalContracts, {
-          reduceOnly: true,
-          clientOrderId: buildClientOrderId('tpclose', symbol),
-        });
-        if (order.quantityAdjusted) {
-          console.log(`  ℹ️ TP CLOSE ajustada por filtros ${symbol}: ${order.requestedQuantity} → ${order.sentQuantity} (${order.adjustmentNotes.join(', ')})`);
-        }
-
-        const filledCloseQty = getExecutedContracts(order, order.sentQuantity);
-        if (!filledCloseQty || filledCloseQty <= 0) {
-          throw new Error(`TP CLOSE sin ejecución confirmada para ${symbol} (orderId=${order.orderId})`);
-        }
-        closedContracts = Math.min(filledCloseQty, pos.totalContracts);
-        console.log(`  ✅ Orden TP CLOSE ejecutada ${symbol}: side=SELL qty=${closedContracts} orderId=${order.orderId}`);
+        closeResult = await closePositionFully(symbol, pos, price);
       }
 
-      await history.logClose(symbol, price, pos, tpResult.pnlPercent, tpResult.leveragedPnlPercent);
-      if (closedContracts >= pos.totalContracts) {
+      if (closeResult.closedFully) {
+        await history.logClose(symbol, price, pos, tpResult.pnlPercent, tpResult.leveragedPnlPercent);
         await telegram.sendTPAlert(symbol, price, pos, tpResult);
         position.closePosition(state, symbol);
       } else {
-        position.reducePositionContracts(state, symbol, closedContracts);
         const remaining = position.getPosition(state, symbol);
-        await telegram.send(`⚠️ TP parcial en ${symbol}: cerrados ${closedContracts} contratos, quedan ${remaining.totalContracts}.`);
+        await telegram.send(`⚠️ TP no pudo cerrar completamente ${symbol}: quedaron ${closeResult.remainingContracts} contratos abiertos en Binance tras ${closeResult.totalClosedContracts} contratos cerrados.`);
+        if (remaining.totalContracts <= 0) {
+          position.closePosition(state, symbol);
+        }
       }
       return; // No evaluar más
     }
