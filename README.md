@@ -174,9 +174,3 @@ El bot ejecuta:
 
 - No hay garantia absoluta de ejecucion perfecta (latencia, cambios de exchange, mantenimiento).
 - El bot minimiza rechazos por filtros, pero Binance puede rechazar por otros motivos externos.
-
-## 11) Proximos pasos sugeridos
-
-- Soporte Binance Testnet para paper trading realista.
-- Re-sync de posicion desde Binance al iniciar (recovery despues de caidas).
-- Stop Loss real en exchange.
