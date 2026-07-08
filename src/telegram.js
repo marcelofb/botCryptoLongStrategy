@@ -100,7 +100,7 @@ async function sendDCAAlert(symbol, price, position, dcaResult) {
 📦 *Partes usadas:* ${position.partsUsed}/${config.totalParts}
 📦 *Total contratos:* ${position.totalContracts} (${formatUSD(position.totalInvested)} notional)
 
-🟢 *Acción:* agregar exposición en la misma dirección
+🟢 *Acción:* agregar exposición
   `.trim() + getMessageFooter();
 
   await send(text);
