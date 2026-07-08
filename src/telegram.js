@@ -158,7 +158,6 @@ async function sendRiskAlert(symbol, price, position, riskResult) {
  */
 async function sendDailySummary(positionsSummary) {
   let text = `📋 *RESUMEN DIARIO - ${new Date().toLocaleDateString('es-ES')}*\n\n`;
-  const anyActive = positionsSummary.some((summary) => summary.active);
 
   for (const summary of positionsSummary) {
     const statusEmoji = summary.active ? '🟢' : '⚪';
@@ -171,16 +170,11 @@ async function sendDailySummary(positionsSummary) {
       text += `  📦 *Partes:* ${summary.partsUsed}/${config.totalParts} (${summary.totalContracts} contratos)\n`;
       text += `  💵 *Notional:* ${formatUSD(summary.totalInvested)}\n`;
       text += `  💀 *Liquidación:* ${formatPrice(summary.liquidationPrice)}\n`;
-      text += `  🟢 *Estado:* posición abierta\n`;
     } else {
       text += `  ⚪ *Estado:* sin posición activa\n`;
     }
     text += '\n';
   }
-
-  text += anyActive
-    ? '🟢 *Estado general del bot:* hay posición activa\n'
-    : '⚪ *Estado general del bot:* sin posiciones activas\n';
 
   text += getMessageFooter();
 
