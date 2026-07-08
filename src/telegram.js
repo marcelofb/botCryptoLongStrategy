@@ -230,11 +230,11 @@ async function sendStartup(tradingEnabled = false) {
   const text = `
 🤖 *Crypto Bull Bot iniciado*
 
-🟢 *Modo operativo:* ${tradingEnabled ? 'TRADING REAL' : 'solo alertas'}
+🟢 Modo operativo: ${tradingEnabled ? 'TRADING REAL' : 'solo alertas'}
 
 ${symbolLine}
 ${capitalLine}
-📋 *Estrategia:* Long ${config.leverage}x con DCA
+📋 Estrategia: Long ${config.leverage}x con DCA
 ⏰ Chequeo: cada hora
 📋 Resumen diario: 22:00
   `.trim() + getMessageFooter();
