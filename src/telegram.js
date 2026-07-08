@@ -6,7 +6,7 @@ let bot = null;
 let chatIds = [];
 
 function formatSymbol(symbol) {
-  return String(symbol).replace(/([_*\[\]()`])/g, '\\$1');
+  return `\`${String(symbol).replace(/`/g, '')}\``;
 }
 
 function getMessageFooter() {
@@ -61,7 +61,7 @@ async function sendEntryAlert(symbol, price, analysis, contractsPerPart) {
 
   const safeSymbol = formatSymbol(symbol);
   const text = `
-🚀 *SEÑAL DE LONG - ${safeSymbol}*
+🚀 *SEÑAL DE LONG* - ${safeSymbol}
 
 ${strengthEmoji[analysis.strength] || '🟢'} *Fuerza:* ${analysis.strength.toUpperCase()}
 
@@ -88,7 +88,7 @@ async function sendDCAAlert(symbol, price, position, dcaResult) {
   const safeSymbol = formatSymbol(symbol);
 
   const text = `
-🔄 *RECARGA DCA - ${safeSymbol}*
+🔄 *RECARGA DCA* - ${safeSymbol}
 
 🧭 *Motivo:* ajuste por pérdida y reglas de DCA
 
@@ -112,7 +112,7 @@ async function sendDCAAlert(symbol, price, position, dcaResult) {
 async function sendTPAlert(symbol, price, position, tpResult) {
   const safeSymbol = formatSymbol(symbol);
   const text = `
-✅ *TAKE PROFIT - ${safeSymbol}*
+✅ *TAKE PROFIT* - ${safeSymbol}
 
 🎯 *Señal:* objetivo alcanzado
 
@@ -135,7 +135,7 @@ async function sendTPAlert(symbol, price, position, tpResult) {
 async function sendRiskAlert(symbol, price, position, riskResult) {
   const safeSymbol = formatSymbol(symbol);
   const text = `
-⚠️ *ALERTA DE RIESGO - ${safeSymbol}*
+⚠️ *ALERTA DE RIESGO* - ${safeSymbol}
 
 🚨 *Estado:* cercanía a liquidación
 
@@ -202,7 +202,7 @@ async function sendNoSignalReport(symbol, price, analysis) {
     : `❌ Precio SOBRE EMA: ${formatPrice(price)} > ${formatPrice(analysis.ema)} (+${emaGapPercent}%, necesita bajar ${formatUSD(Math.abs(price - analysis.ema))})`;
 
   const text = `
-🔍 *CHEQUEO SIN SEÑAL - ${safeSymbol}*
+🔍 *CHEQUEO SIN SEÑAL* - ${safeSymbol}
 
 🧭 *Estado:* esperando pullback válido
 
