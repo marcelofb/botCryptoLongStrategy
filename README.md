@@ -70,14 +70,14 @@ flowchart TD
     Q -- Si --> R[Reintentar cierre sobre el remanente]
     R --> O
 
-    L -- No --> D{DCA habilitado por reglas?}
-    D -- No --> S[No operar]
-    D -- Si --> T[Calcular contratos DCA]
-    T --> U{TRADING_ENABLED?}
-    U -- No --> V[Actualizar estado local + alerta DCA]
-    U -- Si --> W[Validar filtros Binance + enviar BUY MARKET]
-    W --> X[Sincronizar con executedQty/avgPrice]
-    X --> V
+  L -- No --> S{DCA habilitado por reglas?}
+  S -- No --> T[No operar]
+  S -- Si --> U[Calcular contratos DCA]
+  U --> V{TRADING_ENABLED?}
+  V -- No --> W[Actualizar estado local + alerta DCA]
+  V -- Si --> X[Validar filtros Binance + enviar BUY MARKET]
+  X --> Y[Sincronizar con executedQty/avgPrice]
+  Y --> W
 ```
 
 ## 4) Arquitectura rapida
